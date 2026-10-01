@@ -19,6 +19,13 @@ import {
   resolvePythonPath,
 } from '../services/acestep.js';
 import { getStorageProvider } from '../services/storage/factory.js';
+import {
+  AigenMusicError,
+  getAigenJobStatus,
+  getAigenRuntime,
+  submitAigenGeneration,
+  usesGovernedAigenGeneration,
+} from '../services/aigen-music.js';
 
 const router = Router();
 
@@ -149,6 +156,7 @@ interface GenerateBody {
   trackName?: string;
   completeTrackClasses?: string[];
   isFormatCaption?: boolean;
+  loraLoaded?: boolean;
 
   // Model selection
   ditModel?: string;
@@ -208,6 +216,7 @@ router.post('/upload-audio', authMiddleware, (req: AuthenticatedRequest, res: Re
 });
 
 router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  let localJobId: string | null = null;
   try {
     const {
       customMode,
@@ -264,6 +273,7 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       trackName,
       completeTrackClasses,
       isFormatCaption,
+      loraLoaded,
       ditModel,
     } = req.body as GenerateBody;
 
@@ -332,21 +342,25 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
       trackName,
       completeTrackClasses,
       isFormatCaption,
+      loraLoaded,
       ditModel,
     };
 
     // Create job record in database
-    const localJobId = generateUUID();
+    localJobId = generateUUID();
     await pool.query(
       `INSERT INTO generation_jobs (id, user_id, status, params, created_at, updated_at)
        VALUES (?, ?, 'queued', ?, datetime('now'), datetime('now'))`,
       [localJobId, req.user!.id, JSON.stringify(params)]
     );
 
-    // Start generation
-    const { jobId: hfJobId } = await generateMusicViaAPI(params);
+    // Default text-to-music now crosses the governed AIGen Music boundary.
+    // Legacy non-text modes remain direct ACE paths until their contracts move.
+    const { jobId: hfJobId } = usesGovernedAigenGeneration(params)
+      ? await submitAigenGeneration(params)
+      : await generateMusicViaAPI(params);
 
-    // Update job with ACE-Step task ID
+    // Store the provider job ID. AIGen Music IDs are prefixed with J-.
     await pool.query(
       `UPDATE generation_jobs SET acestep_task_id = ?, status = 'running', updated_at = datetime('now') WHERE id = ?`,
       [hfJobId, localJobId]
@@ -359,6 +373,25 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
     });
   } catch (error) {
     console.error('Generate error:', error);
+
+    if (localJobId) {
+      try {
+        await pool.query(
+          `UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?`,
+          [(error as Error).message || 'Generation failed', localJobId]
+        );
+      } catch (dbError) {
+        console.error('Failed to mark generation job failed:', dbError);
+      }
+    }
+
+    if (error instanceof AigenMusicError) {
+      res.status(error.statusCode).json({
+        error: error.message,
+        code: error.code,
+      });
+      return;
+    }
     res.status(500).json({ error: (error as Error).message || 'Generation failed' });
   }
 });
@@ -387,7 +420,10 @@ router.get('/status/:jobId', authMiddleware, async (req: AuthenticatedRequest, r
     // If job is still running, check ACE-Step status
     if (['pending', 'queued', 'running'].includes(job.status) && job.acestep_task_id) {
       try {
-        const aceStatus = await getJobStatus(job.acestep_task_id);
+        const isAigenJob = String(job.acestep_task_id).startsWith('J-');
+        const aceStatus = isAigenJob
+          ? await getAigenJobStatus(job.acestep_task_id)
+          : await getJobStatus(job.acestep_task_id);
 
         if (aceStatus.status !== job.status) {
           // Use optimistic lock: only update if status hasn't changed (prevents duplicate song creation)
@@ -412,6 +448,7 @@ router.get('/status/:jobId', authMiddleware, async (req: AuthenticatedRequest, r
           if (aceStatus.status === 'succeeded' && aceStatus.result && wasUpdated) {
             const params = typeof job.params === 'string' ? JSON.parse(job.params) : job.params;
             const audioUrls = aceStatus.result.audioUrls.filter((url: string) => {
+              if (isAigenJob) return true;
               const lower = url.toLowerCase();
               return lower.endsWith('.mp3') || lower.endsWith('.flac') || lower.endsWith('.wav');
             });
@@ -427,7 +464,9 @@ router.get('/status/:jobId', authMiddleware, async (req: AuthenticatedRequest, r
 
               try {
                 const { buffer } = await downloadAudioToBuffer(audioUrl);
-                const ext = audioUrl.includes('.flac') ? '.flac' : '.mp3';
+                const ext = isAigenJob
+                  ? (params.audioFormat === 'flac' ? '.flac' : '.mp3')
+                  : (audioUrl.includes('.flac') ? '.flac' : '.mp3');
                 const storageKey = `${req.user!.id}/${songId}${ext}`;
                 await storage.upload(storageKey, buffer, `audio/${ext.slice(1)}`);
                 const storedPath = storage.getPublicUrl(storageKey);
@@ -484,7 +523,9 @@ router.get('/status/:jobId', authMiddleware, async (req: AuthenticatedRequest, r
             }
 
             aceStatus.result.audioUrls = localPaths;
-            cleanupJob(job.acestep_task_id);
+            if (!isAigenJob) {
+              cleanupJob(job.acestep_task_id);
+            }
           }
         }
 
@@ -690,6 +731,26 @@ router.get('/random-description', authMiddleware, async (_req: AuthenticatedRequ
   } catch (error) {
     console.error('Random description error:', error);
     res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+router.get('/runtime', async (_req, res: Response) => {
+  try {
+    const runtime = await getAigenRuntime();
+    res.json(runtime);
+  } catch (error) {
+    if (error instanceof AigenMusicError) {
+      res.status(error.statusCode).json({
+        error: error.message,
+        code: error.code,
+        runtime_state: 'ERROR',
+      });
+      return;
+    }
+    res.status(503).json({
+      error: (error as Error).message || 'AIGen Music service unavailable',
+      runtime_state: 'ERROR',
+    });
   }
 });
 
