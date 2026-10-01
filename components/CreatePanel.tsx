@@ -3,7 +3,7 @@ import { Sparkles, ChevronDown, Settings2, Trash2, Music2, Sliders, Dices, Hash,
 import { GenerationParams, Song } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
-import { generateApi } from '../services/api';
+import { generateApi, MusicRuntimeStatus } from '../services/api';
 import { MAIN_STYLES } from '../data/genres';
 import { EditableSlider } from './EditableSlider';
 
@@ -48,7 +48,7 @@ const KEY_SIGNATURES = [
   'B major', 'B minor'
 ];
 
-const TIME_SIGNATURES = ['', '2', '3', '4', '6', 'N/A'];
+const TIME_SIGNATURES = ['', '2/4', '3/4', '4/4', '5/4', '6/8', '7/8', '9/8', '12/8'];
 
 const TRACK_NAMES = [
   'woodwinds', 'brass', 'fx', 'synth', 'strings', 'percussion',
@@ -164,7 +164,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
     const stored = localStorage.getItem('ace-bulkCount');
     return stored ? Number(stored) : 1;
   });
-  const [guidanceScale, setGuidanceScale] = useState(9.0);
+  const [guidanceScale, setGuidanceScale] = useState(7.0);
   const [randomSeed, setRandomSeed] = useState(true);
   const [seed, setSeed] = useState(-1);
   const [thinking, setThinking] = useState(false); // Default false for GPU compatibility
@@ -180,10 +180,10 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
   // LM Parameters (under Expert)
   const [showLmParams, setShowLmParams] = useState(false);
-  const [lmTemperature, setLmTemperature] = useState(0.8);
-  const [lmCfgScale, setLmCfgScale] = useState(2.2);
+  const [lmTemperature, setLmTemperature] = useState(0.85);
+  const [lmCfgScale, setLmCfgScale] = useState(2.0);
   const [lmTopK, setLmTopK] = useState(0);
-  const [lmTopP, setLmTopP] = useState(0.92);
+  const [lmTopP, setLmTopP] = useState(0.9);
   const [lmNegativePrompt, setLmNegativePrompt] = useState('NO USER INPUT');
 
   // Expert Parameters (now in Advanced section)
@@ -337,6 +337,60 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
   });
   const [isResizing, setIsResizing] = useState(false);
   const lyricsRef = useRef<HTMLDivElement>(null);
+
+  // Governed runtime status. The UI remains usable when ACE is stopped or
+  // blocked; only governed generation is disabled.
+  const [runtimeStatus, setRuntimeStatus] = useState<MusicRuntimeStatus | null>(null);
+  const [runtimeLoading, setRuntimeLoading] = useState(true);
+
+  const refreshRuntime = useCallback(async () => {
+    try {
+      const status = await generateApi.getRuntime();
+      setRuntimeStatus(status);
+    } catch (error) {
+      setRuntimeStatus({
+        runtime_state: 'ERROR',
+        error: error instanceof Error ? error.message : 'Runtime status unavailable',
+      });
+    } finally {
+      setRuntimeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRuntime();
+    const timer = window.setInterval(() => void refreshRuntime(), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshRuntime]);
+
+  const governedTextToMusic = taskType === 'text2music';
+  const runtimeBlocksGeneration =
+    governedTextToMusic &&
+    runtimeStatus !== null &&
+    ['STOPPED', 'BLOCKED_BY_RESOURCES', 'ERROR'].includes(runtimeStatus.runtime_state);
+
+  const runtimeLabel = runtimeLoading
+    ? 'Checking runtime'
+    : runtimeStatus?.runtime_state === 'READY'
+      ? 'Ready'
+      : runtimeStatus?.runtime_state === 'BUSY'
+        ? 'Busy'
+        : runtimeStatus?.runtime_state === 'BLOCKED_BY_RESOURCES'
+          ? 'Blocked by resources'
+          : runtimeStatus?.runtime_state === 'STOPPED'
+            ? 'ACE stopped'
+            : runtimeStatus?.runtime_state === 'ERROR'
+              ? 'Runtime unavailable'
+              : (runtimeStatus?.runtime_state || 'Unknown');
+
+  const runtimeTone =
+    runtimeStatus?.runtime_state === 'READY'
+      ? 'bg-green-500'
+      : runtimeStatus?.runtime_state === 'BUSY'
+        ? 'bg-amber-500'
+        : runtimeStatus?.runtime_state === 'BLOCKED_BY_RESOURCES' || runtimeStatus?.runtime_state === 'ERROR'
+          ? 'bg-red-500'
+          : 'bg-zinc-400';
 
 
   // Close model menu when clicking outside
@@ -1120,12 +1174,51 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
           onLoadedMetadata={(e) => setSourceDuration(e.currentTarget.duration || 0)}
         />
 
-        {/* Header - Mode Toggle & Model Selection */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">ACE-Step v1.5</span>
+        {/* Header - governed runtime, mode toggle, model selection */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between rounded-xl border border-zinc-200 dark:border-white/5 bg-white dark:bg-suno-card px-3 py-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${runtimeTone}`}></div>
+                <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">AIGen Music</span>
+                <span className="text-[11px] text-zinc-500 dark:text-zinc-400">{runtimeLabel}</span>
+              </div>
+              {runtimeStatus?.snapshot && (
+                <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
+                  {typeof runtimeStatus.snapshot.ml_footprint_gib === 'number'
+                    ? `ML ${runtimeStatus.snapshot.ml_footprint_gib.toFixed(1)} GiB`
+                    : ''}
+                  {typeof runtimeStatus.snapshot.available_gib === 'number'
+                    ? ` · available ${runtimeStatus.snapshot.available_gib.toFixed(1)} GiB`
+                    : ''}
+                  {runtimeStatus.snapshot.pressure
+                    ? ` · pressure ${runtimeStatus.snapshot.pressure}`
+                    : ''}
+                </div>
+              )}
+              {runtimeStatus?.default_ace_admission?.reasons?.length ? (
+                <div className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400 truncate" title={runtimeStatus.default_ace_admission.reasons.join('; ')}>
+                  {runtimeStatus.default_ace_admission.reasons[0]}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setRuntimeLoading(true);
+                void refreshRuntime();
+              }}
+              className="ml-3 p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-white/5 transition-colors"
+              title="Refresh runtime status"
+            >
+              <RefreshCw size={14} className={runtimeLoading ? 'animate-spin' : ''} />
+            </button>
           </div>
+
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              ACE-Step v1.5 · governed text-to-music
+            </div>
 
           <div className="flex items-center gap-2">
             {/* Mode Toggle */}
@@ -1140,7 +1233,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 onClick={() => setCustomMode(true)}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${customMode ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300'}`}
               >
-                {t('custom')}
+                Advanced
               </button>
             </div>
 
@@ -1202,6 +1295,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                 </div>
               )}
             </div>
+          </div>
           </div>
         </div>
 
@@ -2772,15 +2866,17 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
         <button
           onClick={handleGenerate}
           className="w-full h-12 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all transform active:scale-[0.98] bg-gradient-to-r from-orange-500 to-pink-600 text-white shadow-lg hover:brightness-110"
-          disabled={isGenerating || !isAuthenticated}
+          disabled={isGenerating || !isAuthenticated || runtimeBlocksGeneration}
         >
           <Sparkles size={18} />
           <span>
-            {isGenerating 
+            {isGenerating
               ? t('generating')
-              : bulkCount > 1
-                ? `${t('createButton')} ${bulkCount} ${t('jobs')} (${bulkCount * batchSize} ${t('variations')})`
-                : `${t('createButton')}${batchSize > 1 ? ` (${batchSize} ${t('variations')})` : ''}`
+              : runtimeBlocksGeneration
+                ? runtimeLabel
+                : bulkCount > 1
+                  ? `${t('createButton')} ${bulkCount} ${t('jobs')} (${bulkCount * batchSize} ${t('variations')})`
+                  : `${t('createButton')}${batchSize > 1 ? ` (${batchSize} ${t('variations')})` : ''}`
             }
           </span>
         </button>
