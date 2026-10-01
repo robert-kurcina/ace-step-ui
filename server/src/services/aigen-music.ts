@@ -128,6 +128,48 @@ function assertSupportedTextToMusic(params: GenerationParams): void {
   if (Array.isArray(params.completeTrackClasses) && params.completeTrackClasses.length) {
     unsupported.push('track classes');
   }
+  if (params.enhance) unsupported.push('AI enhance');
+  if (params.repaintingStart != null && params.repaintingStart !== 0) {
+    unsupported.push('repainting start');
+  }
+  if (params.repaintingEnd != null && params.repaintingEnd !== -1) {
+    unsupported.push('repainting end');
+  }
+  if (
+    params.instruction &&
+    params.instruction !== 'Fill the audio semantic mask based on the given conditions:'
+  ) {
+    unsupported.push('custom instruction');
+  }
+  if (params.audioCoverStrength != null && params.audioCoverStrength !== 1.0) {
+    unsupported.push('audio cover strength');
+  }
+  if (params.cfgIntervalStart != null && params.cfgIntervalStart !== 0.0) {
+    unsupported.push('CFG interval start');
+  }
+  if (params.cfgIntervalEnd != null && params.cfgIntervalEnd !== 1.0) {
+    unsupported.push('CFG interval end');
+  }
+  if (params.useCotMetas != null && params.useCotMetas !== true) {
+    unsupported.push('CoT metadata toggle');
+  }
+  if (params.useCotCaption != null && params.useCotCaption !== true) {
+    unsupported.push('CoT caption toggle');
+  }
+  if (params.useCotLanguage != null && params.useCotLanguage !== true) {
+    unsupported.push('CoT language toggle');
+  }
+  if (params.constrainedDecodingDebug) unsupported.push('constrained decoding debug');
+  if (params.allowLmBatch != null && params.allowLmBatch !== true) {
+    unsupported.push('LM batch toggle');
+  }
+  if (params.scoreScale != null && params.scoreScale !== 0.5) {
+    unsupported.push('score scale');
+  }
+  if (params.lmBatchChunkSize != null && params.lmBatchChunkSize !== 8) {
+    unsupported.push('LM batch chunk size');
+  }
+  if (params.isFormatCaption) unsupported.push('format-caption state');
 
   if (unsupported.length) {
     throw new AigenMusicError(
