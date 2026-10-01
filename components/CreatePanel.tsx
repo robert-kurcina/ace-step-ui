@@ -228,7 +228,7 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
 
   // Model selection
   const [selectedModel, setSelectedModel] = useState<string>(() => {
-    return localStorage.getItem('ace-model') || 'acestep-v15-turbo-shift3';
+    return localStorage.getItem('ace-model') || 'acestep-v15-turbo';
   });
   const [showModelMenu, setShowModelMenu] = useState(false);
   const modelMenuRef = useRef<HTMLDivElement>(null);
@@ -362,6 +362,12 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
     const timer = window.setInterval(() => void refreshRuntime(), 5000);
     return () => window.clearInterval(timer);
   }, [refreshRuntime]);
+
+  useEffect(() => {
+    if (taskType === 'text2music' && batchSize !== 1) {
+      setBatchSize(1);
+    }
+  }, [taskType, batchSize]);
 
   const governedTextToMusic = taskType === 'text2music';
   const runtimeBlocksGeneration =
@@ -2013,28 +2019,31 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
               helpText={`${t('auto')} - 10 ${t('min')}`}
             />
 
-            {/* Batch Size */}
-            <EditableSlider
-              label={t('batchSize')}
-              value={batchSize}
-              min={1}
-              max={4}
-              step={1}
-              onChange={setBatchSize}
-              helpText={t('numberOfVariations')}
-              title="Creates multiple variations in a single run. More variations = longer total time."
-            />
+            {/* Provider batch remains available only on legacy direct-ACE modes.
+                Governed text-to-music models candidates as separate sequential jobs. */}
+            {taskType !== 'text2music' && (
+              <EditableSlider
+                label={t('batchSize')}
+                value={batchSize}
+                min={1}
+                max={4}
+                step={1}
+                onChange={setBatchSize}
+                helpText={t('numberOfVariations')}
+                title="Legacy direct-ACE provider batch size."
+              />
+            )}
 
-            {/* Bulk Generate */}
+            {/* Candidate generation */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{t('bulkGenerate')}</label>
+                <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">{taskType === 'text2music' ? 'Candidates' : t('bulkGenerate')}</label>
                 <span className="text-xs font-mono text-zinc-900 dark:text-white bg-zinc-100 dark:bg-black/20 px-2 py-0.5 rounded">
                   {bulkCount} {t(bulkCount === 1 ? 'job' : 'jobs')}
                 </span>
               </div>
               <div className="flex items-center gap-1">
-                {[1, 2, 3, 5, 10].map((count) => (
+                {[1, 2, 4, 8].map((count) => (
                   <button
                     key={count}
                     onClick={() => { setBulkCount(count); localStorage.setItem('ace-bulkCount', String(count)); }}
@@ -2048,7 +2057,11 @@ export const CreatePanel: React.FC<CreatePanelProps> = ({
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] text-zinc-500">{t('queueMultipleJobs')}</p>
+              <p className="text-[10px] text-zinc-500">
+                {taskType === 'text2music'
+                  ? 'Candidates are generated as separate sequential jobs with independent provenance.'
+                  : t('queueMultipleJobs')}
+              </p>
             </div>
 
             {/* Inference Steps */}
