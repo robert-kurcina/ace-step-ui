@@ -11,17 +11,9 @@ if [ -f .env ]; then
     set +a
 fi
 
-if ! command -v node >/dev/null 2>&1; then
-    echo "Error: Node.js is required. Run ./setup.sh."
-    exit 1
-fi
-
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" != "22" ]; then
-    echo "Error: this fork currently requires Node 22; detected $(node --version)."
-    echo 'Use: export PATH="/opt/homebrew/opt/node@22/bin:$PATH"'
-    exit 1
-fi
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/node22-env.sh"
+aigen_use_node22
 
 if [ ! -d "node_modules" ] || [ ! -d "server/node_modules" ]; then
     echo "Error: dependencies are not installed. Run ./setup.sh first."
