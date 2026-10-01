@@ -1,3 +1,169 @@
+# AIGen Music fork — preparation and startup
+
+This repository is the interim human-facing UI for the AIGen Music project.
+For this fork, **this section is authoritative for local setup and startup**.
+The upstream project documentation is preserved below for reference, but some
+of its startup, Node-version, direct-ACE, and rights language does not describe
+the governed AIGen workflow.
+
+## Current local target
+
+- macOS on Apple Silicon
+- Homebrew
+- Node 22
+- FFmpeg / FFprobe
+- ACE-Step 1.5 checked out separately
+- `aigen-music` checked out separately and serving the governed local API
+- one ACE runtime at most
+- no automatic unloading or termination of LM Studio or other external ML processes
+
+Expected layout:
+
+```text
+~/projects/
+  aigen-music/
+  _vendor/
+    ACE-Step-1.5/
+    ace-step-ui/
+  _models/
+    music/
+      adapters/
+```
+
+## Preparation
+
+Install the required host tools:
+
+```bash
+brew install node@22 ffmpeg
+```
+
+The fork's `setup.sh`, `start.sh`, and `scripts/doctor.sh` automatically
+select Homebrew Node 22 even when another Node version is first on `PATH`.
+
+ACE-Step is expected at:
+
+```text
+~/projects/_vendor/ACE-Step-1.5
+```
+
+AIGen Music is expected at:
+
+```text
+~/projects/aigen-music
+```
+
+Prepare AIGen Music first:
+
+```bash
+cd ~/projects/aigen-music
+bash scripts/bootstrap.sh
+bash scripts/doctor.sh
+uv run pytest -q
+```
+
+Prepare this UI:
+
+```bash
+cd ~/projects/_vendor/ace-step-ui
+./setup.sh
+bash ./scripts/doctor.sh
+npm run build
+(cd server && npm run build)
+```
+
+## Normal development startup
+
+Start the governed AIGen Music service in one terminal:
+
+```bash
+cd ~/projects/aigen-music
+uv run aigen-music-service
+```
+
+Start only the UI frontend/backend in another terminal:
+
+```bash
+cd ~/projects/_vendor/ace-step-ui
+./start.sh
+```
+
+Defaults:
+
+```text
+AIGen Music:  http://127.0.0.1:8100
+ACE-Step:     http://127.0.0.1:8001
+UI backend:   http://127.0.0.1:3001
+UI frontend:  http://127.0.0.1:3000
+```
+
+`./start.sh` does **not** start ACE-Step and does **not** unload LM Studio.
+The Create page may therefore remain usable while generation is blocked by
+resource policy.
+
+Do **not** use `start-all.sh` for the AIGen workflow. It starts ACE outside
+the AIGen resource-governor boundary.
+
+## Public LoRA / LoKr adapters
+
+This UI does not install public LoRA/LoKr files.
+
+Public adapters are governed by the canonical registry in:
+
+```text
+~/projects/aigen-music/config/adapters.toml
+```
+
+and install by default under:
+
+```text
+~/projects/_models/music/adapters/
+```
+
+Use the AIGen Music adapter tool to inspect, verify, or explicitly install an
+admitted adapter:
+
+```bash
+cd ~/projects/aigen-music
+python3 scripts/manage_adapters.py list
+python3 scripts/manage_adapters.py verify
+python3 scripts/manage_adapters.py download --id <adapter-id>
+```
+
+Ordinary bootstrap never downloads public adapter weights. Automatic adapter
+download is permitted only for entries whose exact revision, license evidence,
+compatible base model, file URLs, and SHA-256 hashes have been reviewed and
+whose manifest status is `commercial_approved`.
+
+The UI's historical default path
+`./lora_output/final/adapter` is a local training/output convention, not
+evidence that a public adapter is installed.
+
+## Rights and provenance
+
+AIGen treats software/model licenses, adapter licenses, training/source rights,
+voice/reference rights, and copyrightability as separate questions. Upstream
+marketing statements such as "you own everything" or "no restrictions" are
+not used as chain-of-rights evidence by the AIGen workflow.
+
+Authored lyrics are VERBATIM by default on the governed text-to-music path.
+Generation provenance is owned by `aigen-music`, not by this UI.
+
+See:
+
+- `docs/AIGEN_MACOS.md`
+- `docs/AIGEN_GOVERNED_GENERATION.md`
+- `~/projects/aigen-music/README.md`
+- `~/projects/aigen-music/docs/BOOTSTRAP.md`
+
+---
+
+# Upstream ACE-Step UI documentation
+
+The material below is retained from the upstream project for feature and
+implementation reference. Commands below this point may bypass AIGen
+governance unless they are also documented above.
+
 <p align="center">
   <img src="https://img.shields.io/badge/🎵-ACE--Step_UI-ff69b4?style=for-the-badge&labelColor=1a1a1a" alt="ACE-Step UI" height="60">
 </p>
