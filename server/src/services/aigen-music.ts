@@ -42,6 +42,7 @@ export interface AigenRuntimeStatus {
 export interface AigenJobStatus {
   status: 'queued' | 'running' | 'succeeded' | 'failed';
   queuePosition?: number;
+  etaSeconds?: number;
   progress?: number;
   stage?: string;
   result?: {

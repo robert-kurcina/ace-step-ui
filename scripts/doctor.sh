@@ -21,6 +21,12 @@ check_cmd() {
     fi
 }
 
+# shellcheck disable=SC1091
+source "$ROOT/scripts/node22-env.sh"
+if ! aigen_use_node22; then
+    fail=1
+fi
+
 echo "ACE-Step UI doctor"
 echo
 

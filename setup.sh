@@ -8,22 +8,12 @@ echo "  ACE-Step UI Setup"
 echo "=================================="
 echo
 
-if ! command -v node >/dev/null 2>&1; then
-    echo "Error: Node.js is required."
-    echo "Install Node 22 with: brew install node@22"
-    exit 1
-fi
-
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if [ "$NODE_MAJOR" != "22" ]; then
-    echo "Error: this fork currently requires Node 22."
-    echo "Detected: $(node --version)"
-    echo
-    echo "Install and select Node 22:"
-    echo "  brew install node@22"
-    echo '  export PATH="/opt/homebrew/opt/node@22/bin:$PATH"'
-    exit 1
-fi
+# Select the supported Node runtime even when another version manager has
+# placed a newer Node ahead of Homebrew on PATH.
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/node22-env.sh"
+aigen_use_node22
+echo "Node runtime: $(node --version) ($(command -v node))"
 
 if ! command -v ffmpeg >/dev/null 2>&1; then
     echo "Error: ffmpeg is required."
@@ -64,6 +54,8 @@ FRONTEND_URL=http://localhost:3000
 DATABASE_PATH=./server/data/acestep.db
 EOF
 
+chmod +x scripts/doctor.sh 2>/dev/null || true
+
 echo
 echo "Installing frontend dependencies..."
 npm install
@@ -88,7 +80,7 @@ echo "  Setup Complete"
 echo "=================================="
 echo
 echo "Run:"
-echo "  ./scripts/doctor.sh"
+echo "  bash ./scripts/doctor.sh"
 echo "  ./start.sh"
 echo
 echo "The UI does not start ACE-Step or unload LM Studio."

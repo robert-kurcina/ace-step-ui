@@ -20,7 +20,10 @@ The current macOS profile is intentionally pinned to Node 22 because the upstrea
 
 ```bash
 brew install node@22 ffmpeg
-export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+./setup.sh
+
+# setup/start/doctor select Homebrew Node 22 automatically even when another
+# Node version manager has a newer node first on PATH.
 node --version
 ```
 
@@ -34,7 +37,7 @@ Expected Node major:
 
 ```bash
 ./setup.sh
-./scripts/doctor.sh
+bash ./scripts/doctor.sh
 ./start.sh
 ```
 
