@@ -330,7 +330,36 @@ export interface GenerationJob {
   error?: string;
 }
 
+export interface MusicRuntimeStatus {
+  runtime_state: 'STOPPED' | 'READY' | 'BUSY' | 'BLOCKED_BY_RESOURCES' | 'ERROR' | string;
+  snapshot?: {
+    pressure?: 'green' | 'yellow' | 'red' | string;
+    ml_footprint_gib?: number;
+    available_gib?: number;
+    swap_used_gib?: number;
+    ace_running?: boolean;
+    loaded_models?: Array<{
+      source?: string;
+      identifier?: string;
+      display_name?: string;
+      size_gib?: number | null;
+      status?: string | null;
+    }>;
+  };
+  default_ace_admission?: {
+    state?: string;
+    admitted?: boolean;
+    reasons?: string[];
+    projected_ml_footprint_gib?: number;
+    safe_batch_size?: number;
+  };
+  error?: string;
+}
+
 export const generateApi = {
+  getRuntime: (): Promise<MusicRuntimeStatus> =>
+    api('/api/generate/runtime'),
+
   startGeneration: (params: GenerationParams, token: string): Promise<GenerationJob> =>
     api('/api/generate', { method: 'POST', body: params, token }),
 
