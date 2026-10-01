@@ -216,6 +216,7 @@ router.post('/upload-audio', authMiddleware, (req: AuthenticatedRequest, res: Re
 });
 
 router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  let localJobId: string | null = null;
   try {
     const {
       customMode,
@@ -346,7 +347,7 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
     };
 
     // Create job record in database
-    const localJobId = generateUUID();
+    localJobId = generateUUID();
     await pool.query(
       `INSERT INTO generation_jobs (id, user_id, status, params, created_at, updated_at)
        VALUES (?, ?, 'queued', ?, datetime('now'), datetime('now'))`,
@@ -372,6 +373,18 @@ router.post('/', authMiddleware, async (req: AuthenticatedRequest, res: Response
     });
   } catch (error) {
     console.error('Generate error:', error);
+
+    if (localJobId) {
+      try {
+        await pool.query(
+          `UPDATE generation_jobs SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?`,
+          [(error as Error).message || 'Generation failed', localJobId]
+        );
+      } catch (dbError) {
+        console.error('Failed to mark generation job failed:', dbError);
+      }
+    }
+
     if (error instanceof AigenMusicError) {
       res.status(error.statusCode).json({
         error: error.message,
@@ -435,6 +448,7 @@ router.get('/status/:jobId', authMiddleware, async (req: AuthenticatedRequest, r
           if (aceStatus.status === 'succeeded' && aceStatus.result && wasUpdated) {
             const params = typeof job.params === 'string' ? JSON.parse(job.params) : job.params;
             const audioUrls = aceStatus.result.audioUrls.filter((url: string) => {
+              if (isAigenJob) return true;
               const lower = url.toLowerCase();
               return lower.endsWith('.mp3') || lower.endsWith('.flac') || lower.endsWith('.wav');
             });
@@ -450,7 +464,9 @@ router.get('/status/:jobId', authMiddleware, async (req: AuthenticatedRequest, r
 
               try {
                 const { buffer } = await downloadAudioToBuffer(audioUrl);
-                const ext = audioUrl.includes('.flac') ? '.flac' : '.mp3';
+                const ext = isAigenJob
+                  ? (params.audioFormat === 'flac' ? '.flac' : '.mp3')
+                  : (audioUrl.includes('.flac') ? '.flac' : '.mp3');
                 const storageKey = `${req.user!.id}/${songId}${ext}`;
                 await storage.upload(storageKey, buffer, `audio/${ext.slice(1)}`);
                 const storedPath = storage.getPublicUrl(storageKey);
