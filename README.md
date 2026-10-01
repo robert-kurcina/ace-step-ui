@@ -125,9 +125,9 @@ admitted adapter:
 
 ```bash
 cd ~/projects/aigen-music
-python3 scripts/manage_adapters.py list
-python3 scripts/manage_adapters.py verify
-python3 scripts/manage_adapters.py download --id <adapter-id>
+uv run python scripts/manage_adapters.py list
+uv run python scripts/manage_adapters.py verify
+uv run python scripts/manage_adapters.py download --id <adapter-id>
 ```
 
 Ordinary bootstrap never downloads public adapter weights. Automatic adapter
